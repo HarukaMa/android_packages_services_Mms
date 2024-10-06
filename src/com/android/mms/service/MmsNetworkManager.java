@@ -102,6 +102,10 @@ public class MmsNetworkManager {
     private final Dependencies mDeps;
 
     private int mNetworkReleaseTimeoutMillis;
+
+    // satellite transport status of associated mms active network
+    private boolean  mIsSatelliteTransport;
+
     private EventHandler mEventHandler;
 
     private final class EventHandler extends Handler {
@@ -280,6 +284,8 @@ public class MmsNetworkManager {
                         mEventHandler.sendEmptyMessage(EVENT_IWLAN_NETWORK_NEWLY_AVAILABLE);
                     }
                     mIsLastAvailableNetworkIwlan = isWlan;
+                    mIsSatelliteTransport = Flags.satelliteInternet()
+                            && nc.hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE);
                 }
             }
         }
@@ -324,12 +330,25 @@ public class MmsNetworkManager {
         mMmsHttpClient = null;
         mSubId = subId;
         mReleaseHandler = new Handler(Looper.getMainLooper());
-        mNetworkRequest = new NetworkRequest.Builder()
+
+        NetworkRequest.Builder builder = new NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
                 .setNetworkSpecifier(new TelephonyNetworkSpecifier.Builder()
-                        .setSubscriptionId(mSubId).build())
-                .build();
+                        .setSubscriptionId(mSubId).build());
+
+        // With Satellite internet support, add satellite transport with restricted capability to
+        // support mms over satellite network
+        if (Flags.satelliteInternet()) {
+            builder.removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
+            try {
+                // TODO: b/331622062 remove the try/catch
+                builder.addTransportType(NetworkCapabilities.TRANSPORT_SATELLITE);
+            } catch (IllegalArgumentException exception) {
+                LogUtil.e("TRANSPORT_SATELLITE is not supported.");
+            }
+        }
+        mNetworkRequest = builder.build();
 
         mNetworkReleaseTask = new Runnable() {
             @Override
@@ -561,4 +580,15 @@ public class MmsNetworkManager {
     protected int getNetworkReleaseTimeoutMillis() {
         return mNetworkReleaseTimeoutMillis;
     }
+
+    /**
+     * Indicates satellite transport status for active network
+     *
+     * @return {@code true} if satellite transport, otherwise {@code false}
+     */
+    public boolean isSatelliteTransport() {
+        LogUtil.w("satellite transport status: " + mIsSatelliteTransport);
+        return mIsSatelliteTransport;
+    }
+
 }
